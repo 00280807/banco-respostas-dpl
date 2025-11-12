@@ -172,6 +172,8 @@ else:
     elif menu == "🚪 Sair":
         st.session_state.logado = False
         st.success("Sessão encerrada com sucesso.")
-        st.experimental_rerun()
+        st.rerun()
+
+
 
 
