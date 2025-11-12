@@ -1,3 +1,9 @@
+import streamlit as st
+import pandas as pd
+import os
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+
 # Formulário para adicionar nova resposta
 st.subheader("Adicionar nova demanda e resposta")
 
@@ -22,3 +28,4 @@ if submitted:
     df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
     df.to_csv(csv_path, index=False)
     st.success("✅ Demanda e resposta adicionadas com sucesso!")
+
