@@ -82,7 +82,7 @@ def carregar_banco():
 # FUNÇÃO: ADICIONAR NOVA ENTRADA
 # ----------------------------------------------------------
 def adicionar_nova_entrada():
-    st.markdown("### 📝 Adicionar nova demanda e resposta")
+    st.markdown("### 📝 Adicionar nova demanda/resposta")
     df = carregar_banco()
 
     n_processo = st.text_input("Nº do processo SEI")
@@ -212,22 +212,23 @@ if not st.session_state.logged_in:
 else:
     # ===== MENU LATERAL =====
     menu = st.sidebar.radio("Menu", [
-        "Adicionar nova demanda e resposta",
+        "Adicionar nova demanda/resposta",
         "Buscar demandas semelhantes",
-        "Visualizar demandas e respostas registradas",
+        "Visualizar demandas/respostas registradas",
         "Sair"
     ])
 
-    if menu == "Adicionar nova demanda e resposta":
+    if menu == "Adicionar nova demanda/resposta":
         adicionar_nova_entrada()
 
     elif menu == "Buscar demandas semelhantes":
         buscar_semelhantes()
 
-    elif menu == "Visualizar demandas e respostas registradas":
+    elif menu == "Visualizar demandas/respostas registradas":
         visualizar_e_editar()
 
     elif menu == "Sair":
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
