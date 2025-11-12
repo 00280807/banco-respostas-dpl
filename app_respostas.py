@@ -5,13 +5,54 @@ from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
 # ----------------------------------------------------------
-# CONFIGURAÇÕES INICIAIS
+# CONFIGURAÇÕES VISUAIS DO APP
 # ----------------------------------------------------------
-st.set_page_config(page_title="Banco de Respostas DPL - ICMBio", layout="wide")
+st.set_page_config(
+    page_title="Banco de Respostas da DPL - ICMBio",
+    page_icon="🌿",
+    layout="wide"
+)
+
+# CSS personalizado (cores institucionais e cabeçalho bonito)
+st.markdown("""
+    <style>
+    body {
+        background-color: #F9F9F6;
+        color: #333333;
+    }
+    .main {
+        background-color: #F9F9F6;
+    }
+    .stApp {
+        background-color: #F9F9F6;
+    }
+    header[data-testid="stHeader"] {
+        background-color: #1B5E20;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #E8F5E9;
+    }
+    h1, h2, h3, h4 {
+        color: #1B5E20;
+    }
+    .css-18e3th9 {
+        padding-top: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ----------------------------------------------------------
+# CABEÇALHO COM LOGO
+# ----------------------------------------------------------
+st.image("https://www.gov.br/icmbio/pt-br/logo.png", width=180)
+st.title("Banco de Respostas da DPL - ICMBio")
+st.caption("🗣️🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 DATA_FILE = "banco_respostas.csv"
 
-# Carregar modelo semântico
+# ----------------------------------------------------------
+# CARREGAMENTO DO MODELO SEMÂNTICO
+# ----------------------------------------------------------
 @st.cache_resource
 def load_model():
     return SentenceTransformer("paraphrase-MiniLM-L6-v2")
@@ -19,7 +60,7 @@ def load_model():
 model = load_model()
 
 # ----------------------------------------------------------
-# FUNÇÃO PARA CARREGAR OU CRIAR BANCO DE DADOS
+# FUNÇÃO PARA CARREGAR OU CRIAR BANCO
 # ----------------------------------------------------------
 def carregar_banco():
     if os.path.exists(DATA_FILE):
@@ -41,7 +82,7 @@ if "logado" not in st.session_state:
     st.session_state.logado = False
 
 if not st.session_state.logado:
-    st.title("🔐 Banco de Respostas DPL - ICMBio")
+    st.markdown("### 🔐 Acesso restrito à equipe DPL/ICMBio")
 
     usuario = st.text_input("Usuário:")
     senha = st.text_input("Senha:", type="password")
@@ -49,7 +90,7 @@ if not st.session_state.logado:
     if st.button("Entrar"):
         if usuario == "DPL" and senha == "ICMBio2025!":
             st.session_state.logado = True
-            st.success("Login realizado com sucesso! ✅")
+            st.success("Arrasou! Login realizado com sucesso! ✅")
             st.experimental_rerun()
         else:
             st.error("❌ Usuário ou senha incorretos.")
@@ -76,7 +117,7 @@ else:
             tipo = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
             numero_doc = st.text_input("Nº do documento")
             autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
-            texto_demanda = st.text_area("Texto do documento recebido (demanda ou perguntas)")
+            texto_demanda = st.text_area("Texto do documento recebido (demanda ou pergunta)")
             texto_resposta = st.text_area("Texto da resposta institucional enviada")
             submitted = st.form_submit_button("Salvar no banco")
 
