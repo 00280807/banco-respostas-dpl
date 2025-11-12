@@ -96,7 +96,7 @@ if not st.session_state.logado:
             st.error("❌ Usuário ou senha incorretos.")
 
 else:
-    # ===== MENU LATERAL =====
+# ===== MENU LATERAL =====
 menu = st.sidebar.radio("Menu", ["Adicionar nova demanda e resposta",
                                  "Buscar demandas semelhantes",
                                  "Visualizar demandas e respostas registradas",
@@ -146,6 +146,7 @@ elif menu == "Sair":
     st.session_state["logged_in"] = False
     st.success("Logout realizado com sucesso.")
     st.rerun()
+
 
 
 
