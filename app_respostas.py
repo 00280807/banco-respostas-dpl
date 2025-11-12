@@ -44,9 +44,9 @@ st.markdown("""
 # ----------------------------------------------------------
 # CABEÇALHO COM LOGO
 # ----------------------------------------------------------
-st.image("https://www.gov.br/icmbio/pt-br/logo.png", width=180)
+st.image("https://www.gov.br/icmbio/pt-br/assuntos/biodiversidade/unidade-de-conservacao/unidades-de-biomas/marinho/lista-de-ucs/parna-marinho-dos-abrolhos/fomulario-denuncia/icmbio-logo-1.png/@@images/93d85e33-e72b-423a-bc35-5d1b1f09b402.png", width=180)
 st.title("Banco de Respostas da DPL - ICMBio")
-st.caption("🗣️🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
+st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 DATA_FILE = "banco_respostas.csv"
 
@@ -173,3 +173,4 @@ else:
         st.session_state.logado = False
         st.success("Sessão encerrada com sucesso.")
         st.experimental_rerun()
+
