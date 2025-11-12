@@ -96,83 +96,57 @@ if not st.session_state.logado:
             st.error("❌ Usuário ou senha incorretos.")
 
 else:
-    # ------------------------------------------------------
-    # MENU LATERAL
-    # ------------------------------------------------------
-    menu = st.sidebar.radio(
-        "Menu principal",
-        ["📥 Adicionar demanda/resposta", "🔍 Buscar semelhantes", "🚪 Sair"]
-    )
+    # ===== MENU LATERAL =====
+menu = st.sidebar.radio("Menu", ["Adicionar nova demanda e resposta",
+                                 "Buscar demandas semelhantes",
+                                 "Visualizar demandas e respostas registradas",
+                                 "Sair"])
 
-    df = carregar_banco()
+# ===== OPÇÃO 1: Adicionar nova demanda e resposta =====
+if menu == "Adicionar nova demanda e resposta":
+    st.subheader("Adicionar nova demanda e resposta")
+    adicionar_nova_entrada()
 
-    # ------------------------------------------------------
-    # OPÇÃO 1: ADICIONAR NOVA DEMANDA E RESPOSTA
-    # ------------------------------------------------------
-    if menu == "📥 Adicionar demanda/resposta":
-        st.header("📥 Adicionar nova demanda e resposta")
+# ===== OPÇÃO 2: Buscar demandas semelhantes =====
+elif menu == "Buscar demandas semelhantes":
+    st.subheader("Buscar demandas semelhantes")
+    buscar_semelhantes()
 
-        with st.form("add_form"):
-            sei = st.text_input("Nº do processo SEI")
-            tipo = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
-            numero_doc = st.text_input("Nº do documento")
-            autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
-            texto_demanda = st.text_area("Texto do documento recebido (demanda ou pergunta)")
-            texto_resposta = st.text_area("Texto da resposta institucional enviada")
-            submitted = st.form_submit_button("Salvar no banco")
+# ===== NOVA OPÇÃO 3: Visualizar demandas =====
+elif menu == "Visualizar demandas e respostas registradas":
+    st.subheader("📋 Demandas e respostas registradas")
 
-            if submitted:
-                nova_linha = pd.DataFrame([{
-                    "Nº do processo SEI": sei,
-                    "Tipo do documento": tipo,
-                    "Nº do documento": numero_doc,
-                    "Autoria": autoria,
-                    "Texto do documento recebido": texto_demanda,
-                    "Texto da resposta institucional enviada": texto_resposta
-                }])
-                df = pd.concat([df, nova_linha], ignore_index=True)
-                df.to_csv(DATA_FILE, index=False)
-                st.success("✅ Demanda e resposta salvas com sucesso!")
+    # Verifica se existe o arquivo CSV
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
 
-    # ------------------------------------------------------
-    # OPÇÃO 2: BUSCAR DEMANDAS SEMELHANTES
-    # ------------------------------------------------------
-    elif menu == "🔍 Buscar semelhantes":
-        st.header("🔍 Buscar demandas semelhantes")
+        # Campo de busca
+        termo_busca = st.text_input("🔍 Buscar por número, tipo ou autoria:")
 
-        consulta = st.text_area("Digite o texto ou pergunta que deseja verificar:")
+        if termo_busca:
+            termo = termo_busca.lower()
+            df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
+        else:
+            df_filtrado = df
 
-        if st.button("Buscar no banco"):
-            if len(df) == 0:
-                st.warning("O banco de dados ainda está vazio.")
-            else:
-                consulta_emb = model.encode(consulta, convert_to_tensor=True)
-                textos = df["Texto do documento recebido"].tolist()
-                embeddings = model.encode(textos, convert_to_tensor=True)
-                similaridades = util.pytorch_cos_sim(consulta_emb, embeddings)[0].cpu().numpy()
+        # Mostra o total de registros
+        st.write(f"**Total de registros:** {len(df_filtrado)}")
 
-                top_k = np.argsort(similaridades)[::-1][:5]
+        # Mostra a tabela
+        st.dataframe(df_filtrado)
 
-                st.write("### Resultados mais semelhantes:")
-                for i in top_k:
-                    st.markdown(f"""
-                    **Similaridade:** {similaridades[i]*100:.2f}%  
-                    **Nº SEI:** {df.iloc[i]['Nº do processo SEI']}  
-                    **Tipo:** {df.iloc[i]['Tipo do documento']}  
-                    **Nº do documento:** {df.iloc[i]['Nº do documento']}  
-                    **Autoria:** {df.iloc[i]['Autoria']}  
-                    **Texto recebido:** {df.iloc[i]['Texto do documento recebido']}  
-                    **Resposta institucional:** {df.iloc[i]['Texto da resposta institucional enviada']}  
-                    ---
-                    """)
+        # Botão para atualizar
+        if st.button("🔄 Atualizar lista"):
+            st.rerun()
+    else:
+        st.warning("Nenhum registro encontrado ainda.")
 
-    # ------------------------------------------------------
-    # OPÇÃO 3: SAIR
-    # ------------------------------------------------------
-    elif menu == "🚪 Sair":
-        st.session_state.logado = False
-        st.success("Sessão encerrada com sucesso.")
-        st.rerun()
+# ===== OPÇÃO 4: Sair =====
+elif menu == "Sair":
+    st.session_state["logged_in"] = False
+    st.success("Logout realizado com sucesso.")
+    st.rerun()
+
 
 
 
