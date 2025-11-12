@@ -91,7 +91,7 @@ if not st.session_state.logado:
         if usuario == "DPL" and senha == "ICMBio2025!":
             st.session_state.logado = True
             st.success("Arrasou! Login realizado com sucesso! ✅")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("❌ Usuário ou senha incorretos.")
 
@@ -173,6 +173,7 @@ else:
         st.session_state.logado = False
         st.success("Sessão encerrada com sucesso.")
         st.rerun()
+
 
 
 
