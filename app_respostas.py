@@ -48,7 +48,7 @@ st.image(
     "https://www.gov.br/icmbio/pt-br/assuntos/biodiversidade/unidade-de-conservacao/unidades-de-biomas/marinho/lista-de-ucs/parna-marinho-dos-abrolhos/fomulario-denuncia/icmbio-logo-1.png/@@images/93d85e33-e72b-423a-bc35-5d1b1f09b402.png",
     width=180
 )
-st.title("Banco de Respostas da DPL")
+st.title("Banco de Respostas da DPL - ICMBio")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 DATA_FILE = "banco_respostas.csv"
@@ -79,7 +79,7 @@ def carregar_banco():
         ])
 
 # ----------------------------------------------------------
-# FUNÇÕES AUXILIARES
+# FUNÇÃO: ADICIONAR NOVA ENTRADA
 # ----------------------------------------------------------
 def adicionar_nova_entrada():
     st.markdown("### 📝 Adicionar nova demanda e resposta")
@@ -88,8 +88,8 @@ def adicionar_nova_entrada():
     n_processo = st.text_input("Nº do processo SEI")
     tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
     n_documento = st.text_input("Nº do documento")
-    autoria = st.text_input("Autoria (ex: Dep. Federal Erika Kokay - PT/DF)")
-    texto_recebido = st.text_area("Texto do documento recebido (demanda ou pergunta)")
+    autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
+    texto_recebido = st.text_area("Texto do documento recebido (demanda ou perguntas)")
     resposta_enviada = st.text_area("Texto da resposta institucional enviada")
 
     if st.button("💾 Salvar registro"):
@@ -108,6 +108,9 @@ def adicionar_nova_entrada():
         else:
             st.warning("⚠️ Por favor, preencha todos os campos obrigatórios.")
 
+# ----------------------------------------------------------
+# FUNÇÃO: BUSCAR SEMELHANTES
+# ----------------------------------------------------------
 def buscar_semelhantes():
     st.markdown("### 🔍 Buscar demandas semelhantes")
     df = carregar_banco()
@@ -138,6 +141,56 @@ def buscar_semelhantes():
             st.warning("Digite um texto para buscar semelhanças.")
 
 # ----------------------------------------------------------
+# FUNÇÃO: VISUALIZAR E EDITAR REGISTROS
+# ----------------------------------------------------------
+def visualizar_e_editar():
+    st.subheader("📋 Demandas e respostas registradas")
+    if not os.path.exists(DATA_FILE):
+        st.warning("Nenhum registro encontrado ainda.")
+        return
+
+    df = pd.read_csv(DATA_FILE)
+
+    termo_busca = st.text_input("🔍 Buscar por número, texto ou autoria:")
+    if termo_busca:
+        termo = termo_busca.lower()
+        df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
+    else:
+        df_filtrado = df
+
+    st.write(f"**Total de registros:** {len(df_filtrado)}")
+    st.dataframe(df_filtrado)
+
+    # Botão para atualizar
+    if st.button("🔄 Atualizar lista"):
+        st.rerun()
+
+    # Se quiser editar um registro
+    st.markdown("---")
+    st.markdown("### ✏️ Editar registro existente")
+
+    if len(df) > 0:
+        opcoes = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
+        escolha = st.selectbox("Selecione o registro para editar:", [""] + opcoes.tolist())
+
+        if escolha:
+            idx = opcoes[opcoes == escolha].index[0]
+            registro = df.loc[idx]
+
+            n_processo = st.text_input("Nº do processo SEI", registro["Nº do processo SEI"])
+            tipo_doc = st.text_input("Tipo do documento", registro["Tipo do documento"])
+            n_documento = st.text_input("Nº do documento", registro["Nº do documento"])
+            autoria = st.text_input("Autoria", registro["Autoria"])
+            texto_recebido = st.text_area("Texto do documento recebido", registro["Texto do documento recebido"])
+            resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro["Texto da resposta institucional enviada"])
+
+            if st.button("💾 Atualizar registro"):
+                df.loc[idx] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
+                df.to_csv(DATA_FILE, index=False)
+                st.success("✅ Registro atualizado com sucesso!")
+                st.rerun()
+
+# ----------------------------------------------------------
 # LOGIN FIXO
 # ----------------------------------------------------------
 if "logged_in" not in st.session_state:
@@ -165,42 +218,16 @@ else:
         "Sair"
     ])
 
-    # ===== OPÇÃO 1: Adicionar nova demanda e resposta =====
     if menu == "Adicionar nova demanda e resposta":
         adicionar_nova_entrada()
 
-    # ===== OPÇÃO 2: Buscar demandas semelhantes =====
     elif menu == "Buscar demandas semelhantes":
         buscar_semelhantes()
 
-    # ===== OPÇÃO 3: Visualizar demandas e respostas =====
     elif menu == "Visualizar demandas e respostas registradas":
-        st.subheader("📋 Demandas e respostas registradas")
+        visualizar_e_editar()
 
-        if os.path.exists(DATA_FILE):
-            df = pd.read_csv(DATA_FILE)
-
-            termo_busca = st.text_input("🔍 Buscar por número, tipo ou autoria:")
-
-            if termo_busca:
-                termo = termo_busca.lower()
-                df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
-            else:
-                df_filtrado = df
-
-            st.write(f"**Total de registros:** {len(df_filtrado)}")
-            st.dataframe(df_filtrado)
-
-            if st.button("🔄 Atualizar lista"):
-                st.rerun()
-        else:
-            st.warning("Nenhum registro encontrado ainda.")
-
-    # ===== OPÇÃO 4: Sair =====
     elif menu == "Sair":
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
-
-
-
