@@ -88,8 +88,8 @@ def adicionar_nova_entrada():
     n_processo = st.text_input("Nº do processo SEI")
     tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
     n_documento = st.text_input("Nº do documento")
-    autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
-    texto_recebido = st.text_area("Texto do documento recebido (demanda ou perguntas)")
+    autoria = st.text_input("Autoria (ex: Dep. Federal Erika Kokay - PT/DF)")
+    texto_recebido = st.text_area("Texto do documento recebido (demanda ou pergunta)")
     resposta_enviada = st.text_area("Texto da resposta institucional enviada")
 
     if st.button("💾 Salvar registro"):
@@ -240,7 +240,7 @@ def visualizar_e_editar():
         # Usa o índice original (baseado em 0) para edição, mas exibe o ID (baseado em 1)
         df['ID_Display'] = df.index + 1
         opcoes = df["ID_Display"].astype(str) + " — " + df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
-        escolha = st.selectbox("Selecione o registro para editar (pelo ID e Nº SEI):", [""] + opcoes.tolist())
+        escolha = st.selectbox("Selecione o registro para editar (pelo ID e Nº do processo SEI):", [""] + opcoes.tolist())
 
         if escolha:
             # Pega o ID_Display da escolha
@@ -313,3 +313,4 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
