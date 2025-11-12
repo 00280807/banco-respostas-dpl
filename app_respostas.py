@@ -120,26 +120,85 @@ def buscar_semelhantes():
         return
 
     consulta = st.text_area("Cole aqui o texto da demanda ou resposta para buscar semelhantes:")
+    
+    # Adicionando um estado na sessão para armazenar os resultados
+    if 'resultados_busca' not in st.session_state:
+        st.session_state.resultados_busca = pd.DataFrame()
+
     if st.button("Buscar"):
         if consulta.strip():
             embeddings = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
             consulta_emb = model.encode(consulta, convert_to_tensor=True)
             similaridades = util.pytorch_cos_sim(consulta_emb, embeddings)[0]
-            df["Similaridade"] = similaridades.cpu().numpy()
-            resultados = df.sort_values(by="Similaridade", ascending=False).head(5)
+            
+            # Garantir que a coluna "Similaridade" seja temporária
+            df_temp = df.copy()
+            df_temp["Similaridade"] = similaridades.cpu().numpy()
+            resultados = df_temp.sort_values(by="Similaridade", ascending=False).head(5).reset_index(drop=True)
+            
+            # 1. Contagem começando em 1: Adiciona a coluna 'ID'
+            resultados.index = resultados.index + 1
+            resultados['ID'] = resultados.index
+            
+            # Salva os resultados no estado da sessão
+            st.session_state.resultados_busca = resultados
+            
             st.write("### Resultados mais semelhantes:")
-            st.dataframe(resultados[[
+            
+            # Colunas para exibição na tabela
+            colunas_tabela = [
+                "ID",
                 "Nº do processo SEI",
                 "Tipo do documento",
                 "Nº do documento",
                 "Autoria",
-                "Texto do documento recebido",
-                "Texto da resposta institucional enviada",
                 "Similaridade"
-            ]])
+            ]
+            st.dataframe(st.session_state.resultados_busca[colunas_tabela])
+            
         else:
             st.warning("Digite um texto para buscar semelhanças.")
+            st.session_state.resultados_busca = pd.DataFrame() # Limpa os resultados se a busca for vazia
 
+    # 2. Seleção do resultado e exibição fora da tabela
+    if not st.session_state.resultados_busca.empty:
+        
+        # Cria as opções para o selectbox, combinando ID e Título/Autoria
+        opcoes_selecao = (st.session_state.resultados_busca["ID"].astype(str) + 
+                          " - " + st.session_state.resultados_busca["Nº do processo SEI"].astype(str) +
+                          " (" + st.session_state.resultados_busca["Autoria"].astype(str) + 
+                          f" - Similaridade: " + (st.session_state.resultados_busca["Similaridade"]*100).round(2).astype(str) + "%)")
+        
+        escolha = st.selectbox(
+            "Selecione um resultado para visualizar o texto completo:", 
+            options=["Selecione..."] + opcoes_selecao.tolist()
+        )
+        
+        if escolha != "Selecione...":
+            # Extrai o ID da escolha (é o primeiro elemento antes do primeiro hífen)
+            selected_id = int(escolha.split(" - ")[0])
+            
+            # Filtra o DataFrame original pelo ID (que agora é o índice + 1)
+            registro_selecionado = st.session_state.resultados_busca[st.session_state.resultados_busca['ID'] == selected_id].iloc[0]
+
+            st.markdown("---")
+            st.markdown(f"### 📄 Detalhes do Registro Selecionado (ID: {registro_selecionado['ID']})")
+            
+            # Exibe os metadados principais
+            st.markdown(f"**Nº SEI:** {registro_selecionado['Nº do processo SEI']}")
+            st.markdown(f"**Documento:** {registro_selecionado['Tipo do documento']} - {registro_selecionado['Nº do documento']}")
+            st.markdown(f"**Autoria:** {registro_selecionado['Autoria']}")
+            st.markdown(f"**Similaridade:** {(registro_selecionado['Similaridade'] * 100):.2f}%")
+            
+            # Exibe os textos em caixas de expansão
+            with st.expander("👉 Texto do Documento Recebido (Demanda/Pergunta)"):
+                st.write(registro_selecionado["Texto do documento recebido"])
+            
+            with st.expander("✅ Texto da Resposta Institucional Enviada"):
+                st.write(registro_selecionado["Texto da resposta institucional enviada"])
+            
+            st.markdown("---")
+            
 # ----------------------------------------------------------
 # FUNÇÃO: VISUALIZAR E EDITAR REGISTROS
 # ----------------------------------------------------------
@@ -151,12 +210,20 @@ def visualizar_e_editar():
 
     df = pd.read_csv(DATA_FILE)
 
+    # 1. Contagem começando em 1:
+    df_exibicao = df.copy()
+    if not df_exibicao.empty:
+        df_exibicao.index = df_exibicao.index + 1
+        df_exibicao = df_exibicao.reset_index().rename(columns={'index': 'ID'})
+        df_exibicao['ID'] = df_exibicao['ID']
+    
+    
     termo_busca = st.text_input("🔍 Buscar por número, texto ou autoria:")
     if termo_busca:
         termo = termo_busca.lower()
-        df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
+        df_filtrado = df_exibicao[df_exibicao.apply(lambda row: termo in str(row).lower(), axis=1)]
     else:
-        df_filtrado = df
+        df_filtrado = df_exibicao
 
     st.write(f"**Total de registros:** {len(df_filtrado)}")
     st.dataframe(df_filtrado)
@@ -170,13 +237,21 @@ def visualizar_e_editar():
     st.markdown("### ✏️ Editar registro existente")
 
     if len(df) > 0:
-        opcoes = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
-        escolha = st.selectbox("Selecione o registro para editar:", [""] + opcoes.tolist())
+        # Usa o índice original (baseado em 0) para edição, mas exibe o ID (baseado em 1)
+        df['ID_Display'] = df.index + 1
+        opcoes = df["ID_Display"].astype(str) + " — " + df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
+        escolha = st.selectbox("Selecione o registro para editar (pelo ID e Nº SEI):", [""] + opcoes.tolist())
 
         if escolha:
-            idx = opcoes[opcoes == escolha].index[0]
+            # Pega o ID_Display da escolha
+            selected_id_display = int(escolha.split(" — ")[0])
+            
+            # Encontra o índice original (baseado em 0) correspondente
+            idx = df[df['ID_Display'] == selected_id_display].index[0]
             registro = df.loc[idx]
 
+            st.write(f"**Editando Registro ID:** {registro['ID_Display']}")
+            
             n_processo = st.text_input("Nº do processo SEI", registro["Nº do processo SEI"])
             tipo_doc = st.text_input("Tipo do documento", registro["Tipo do documento"])
             n_documento = st.text_input("Nº do documento", registro["Nº do documento"])
@@ -185,7 +260,9 @@ def visualizar_e_editar():
             resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro["Texto da resposta institucional enviada"])
 
             if st.button("💾 Atualizar registro"):
-                df.loc[idx] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
+                # Garante que a coluna 'ID_Display' não seja salva
+                df.loc[idx, ["Nº do processo SEI", "Tipo do documento", "Nº do documento", "Autoria", "Texto do documento recebido", "Texto da resposta institucional enviada"]] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
+                df.drop(columns=['ID_Display'], inplace=True, errors='ignore') 
                 df.to_csv(DATA_FILE, index=False)
                 st.success("✅ Registro atualizado com sucesso!")
                 st.rerun()
@@ -217,6 +294,11 @@ else:
         "Visualizar demandas e respostas registradas",
         "Sair"
     ])
+    
+    # Inicializa o estado para resultados de busca se não existir (para evitar erro no st.selectbox)
+    if 'resultados_busca' not in st.session_state:
+        st.session_state.resultados_busca = pd.DataFrame()
+
 
     if menu == "Adicionar nova demanda e resposta":
         adicionar_nova_entrada()
@@ -231,7 +313,3 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
-
-
-
-
