@@ -86,7 +86,7 @@ def adicionar_nova_entrada():
     df = carregar_banco()
 
     n_processo = st.text_input("Nº do processo SEI")
-    tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Despacho", "Outro"])
+    tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
     n_documento = st.text_input("Nº do documento")
     autoria = st.text_input("Autoria (órgão, setor ou servidor)")
     texto_recebido = st.text_area("Texto do documento recebido")
@@ -201,4 +201,5 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
 
