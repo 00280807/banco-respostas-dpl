@@ -48,7 +48,7 @@ st.image(
     "https://www.gov.br/icmbio/pt-br/assuntos/biodiversidade/unidade-de-conservacao/unidades-de-biomas/marinho/lista-de-ucs/parna-marinho-dos-abrolhos/fomulario-denuncia/icmbio-logo-1.png/@@images/93d85e33-e72b-423a-bc35-5d1b1f09b402.png",
     width=180
 )
-st.title("Banco de Respostas da DPL - ICMBio")
+st.title("Banco de Respostas da DPL")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 DATA_FILE = "banco_respostas.csv"
@@ -119,7 +119,7 @@ def buscar_semelhantes():
         st.info("Ainda não há registros para comparar.")
         return
 
-    consulta = st.text_area("Cole aqui o texto da nova demanda para buscar semelhanças:")
+    consulta = st.text_area("Cole aqui o texto demanda ou resposta para buscar semelhantes:")
     if st.button("Buscar"):
         if consulta.strip():
             embeddings = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
@@ -231,5 +231,6 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
 
 
