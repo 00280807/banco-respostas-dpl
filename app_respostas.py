@@ -119,7 +119,7 @@ def buscar_semelhantes():
         st.info("Ainda não há registros para comparar.")
         return
 
-    consulta = st.text_area("Cole aqui o texto demanda ou resposta para buscar semelhantes:")
+    consulta = st.text_area("Cole aqui o texto da demanda ou resposta para buscar semelhantes:")
     if st.button("Buscar"):
         if consulta.strip():
             embeddings = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
@@ -231,6 +231,7 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
 
 
 
