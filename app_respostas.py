@@ -48,7 +48,7 @@ st.image(
     "https://www.gov.br/icmbio/pt-br/assuntos/biodiversidade/unidade-de-conservacao/unidades-de-biomas/marinho/lista-de-ucs/parna-marinho-dos-abrolhos/fomulario-denuncia/icmbio-logo-1.png/@@images/93d85e33-e72b-423a-bc35-5d1b1f09b402.png",
     width=180
 )
-st.title("Banco de Respostas da DPL - ICMBio")
+st.title("Banco de Respostas da DPL")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 DATA_FILE = "banco_respostas.csv"
@@ -88,8 +88,8 @@ def adicionar_nova_entrada():
     n_processo = st.text_input("Nº do processo SEI")
     tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
     n_documento = st.text_input("Nº do documento")
-    autoria = st.text_input("Autoria (órgão, setor ou servidor)")
-    texto_recebido = st.text_area("Texto do documento recebido")
+    autoria = st.text_input("Autoria (ex: Dep. Federal Erika Kokay - PT/DF)")
+    texto_recebido = st.text_area("Texto do documento recebido (demanda ou pergunta)")
     resposta_enviada = st.text_area("Texto da resposta institucional enviada")
 
     if st.button("💾 Salvar registro"):
@@ -201,5 +201,6 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.rerun()
+
 
 
