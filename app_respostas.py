@@ -1,49 +1,27 @@
+# app_respostas.py  (versão com Google Sheets backend)
 import streamlit as st
 import pandas as pd
 import os
+import json
+import gspread
+from gspread_dataframe import set_with_dataframe
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
-# ----------------------------------------------------------
-# CONFIGURAÇÕES VISUAIS DO APP
-# ----------------------------------------------------------
-st.set_page_config(
-    page_title="Banco de Respostas da DPL",
-    page_icon="🌿",
-    layout="wide"
-)
+# ---------------- Config visual (mantém seu tema) ----------------
+st.set_page_config(page_title="Banco de Respostas da DPL", page_icon="🌿", layout="wide")
 
-# CSS personalizado (cores institucionais e cabeçalho bonito)
 st.markdown("""
     <style>
-    body {
-        background-color: #F9F9F6;
-        color: #333333;
-    }
-    .main {
-        background-color: #F9F9F6;
-    }
-    .stApp {
-        background-color: #F9F9F6;
-    }
-    header[data-testid="stHeader"] {
-        background-color: #1B5E20;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #E8F5E9;
-    }
-    h1, h2, h3, h4 {
-        color: #1B5E20;
-    }
-    .css-18e3th9 {
-        padding-top: 2rem;
-    }
+    body { background-color: #F9F9F6; color: #333333; }
+    .stApp { background-color: #F9F9F6; }
+    header[data-testid="stHeader"] { background-color: #1B5E20; }
+    [data-testid="stSidebar"] { background-color: #E8F5E9; }
+    h1,h2,h3,h4 { color: #1B5E20; }
+    .css-18e3th9 { padding-top: 2rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# ----------------------------------------------------------
-# CABEÇALHO COM LOGO
-# ----------------------------------------------------------
 st.image(
     "https://www.gov.br/icmbio/pt-br/assuntos/biodiversidade/unidade-de-conservacao/unidades-de-biomas/marinho/lista-de-ucs/parna-marinho-dos-abrolhos/fomulario-denuncia/icmbio-logo-1.png/@@images/93d85e33-e72b-423a-bc35-5d1b1f09b402.png",
     width=180
@@ -51,266 +29,208 @@ st.image(
 st.title("Banco de Respostas da DPL")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
-DATA_FILE = "banco_respostas.csv"
+# ---------------- Config do Google Sheets via Secrets ----------------
+# Você deve ter adicionado em Streamlit Secrets:
+# gcp_service_account = '''{ ... JSON da service account ... }'''
+# sheet_url = "https://docs.google.com/spreadsheets/d/SEU_ID_AQUI/edit#gid=0"
 
-# ----------------------------------------------------------
-# CARREGAMENTO DO MODELO SEMÂNTICO
-# ----------------------------------------------------------
+if "gcp_service_account" not in st.secrets:
+    st.error("Erro: credencial gcp_service_account não encontrada nos Secrets. Configure conforme instruções.")
+    st.stop()
+if "sheet_url" not in st.secrets:
+    st.error("Erro: sheet_url não encontrada nos Secrets.")
+    st.stop()
+
+# Carregar credenciais da secret (JSON)
+service_account_info = json.loads(st.secrets["gcp_service_account"])
+# Autenticar gspread
+gc = gspread.service_account_from_dict(service_account_info)
+# Abrir planilha por URL
+SHEET = gc.open_by_url(st.secrets["sheet_url"])
+# Usaremos a primeira worksheet
+ws = SHEET.sheet1
+
+# ---------------- Modelo semântico ----------------
 @st.cache_resource
 def load_model():
     return SentenceTransformer("paraphrase-MiniLM-L6-v2")
-
 model = load_model()
 
-# ----------------------------------------------------------
-# FUNÇÃO PARA CARREGAR OU CRIAR BANCO
-# ----------------------------------------------------------
-def carregar_banco():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    else:
-        return pd.DataFrame(columns=[
-            "Nº do processo SEI",
-            "Tipo do documento",
-            "Nº do documento",
-            "Autoria",
-            "Texto do documento recebido",
-            "Texto da resposta institucional enviada"
-        ])
+# ---------------- Funções que usam Google Sheets ----------------
+COLS = [
+    "Nº do processo SEI",
+    "Tipo do documento",
+    "Nº do documento",
+    "Autoria",
+    "Texto do documento recebido",
+    "Texto da resposta institucional enviada"
+]
 
-# ----------------------------------------------------------
-# FUNÇÃO: ADICIONAR NOVA ENTRADA
-# ----------------------------------------------------------
+def carregar_banco():
+    # Lê todas as linhas da planilha e transforma em DataFrame
+    try:
+        records = ws.get_all_records()
+        if len(records) == 0:
+            return pd.DataFrame(columns=COLS)
+        df = pd.DataFrame.from_records(records)
+        # Garantir colunas certas (se faltar, adicionar)
+        for c in COLS:
+            if c not in df.columns:
+                df[c] = ""
+        df = df[COLS]
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar planilha: {e}")
+        return pd.DataFrame(columns=COLS)
+
+def salvar_banco(df):
+    # Escreve o dataframe inteiro na planilha (substitui o conteúdo)
+    try:
+        # Se a planilha está vazia ou com cabeçalho, primeiro limpar
+        ws.clear()
+        # Escreve o dataframe com cabeçalho
+        set_with_dataframe(ws, df, include_index=False, include_column_header=True)
+    except Exception as e:
+        st.error(f"Erro ao salvar na planilha: {e}")
+
+# ---------------- Funções do app (adição, busca, visualização/edição) ----------------
 def adicionar_nova_entrada():
-    st.markdown("### 📝 Adicionar nova demanda e resposta")
     df = carregar_banco()
 
-    n_processo = st.text_input("Nº do processo SEI")
-    tipo_doc = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
-    n_documento = st.text_input("Nº do documento")
-    autoria = st.text_input("Autoria (ex: Dep. Federal Erika Kokay - PT/DF)")
-    texto_recebido = st.text_area("Texto do documento recebido (demanda ou pergunta)")
-    resposta_enviada = st.text_area("Texto da resposta institucional enviada")
+    st.markdown("### 📝 Adicionar nova demanda e resposta")
+
+    sei = st.text_input("Nº do processo SEI")
+    tipo = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
+    numero_doc = st.text_input("Nº do documento")
+    autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
+    texto_recebido = st.text_area("Texto do documento recebido (demanda ou perguntas)")
+    resposta = st.text_area("Texto da resposta institucional enviada")
 
     if st.button("💾 Salvar registro"):
-        if n_processo and tipo_doc and autoria and texto_recebido and resposta_enviada:
-            novo_registro = pd.DataFrame([{
-                "Nº do processo SEI": n_processo,
-                "Tipo do documento": tipo_doc,
-                "Nº do documento": n_documento,
+        if sei and tipo and numero_doc and autoria and texto_recebido and resposta:
+            nova_linha = {
+                "Nº do processo SEI": sei,
+                "Tipo do documento": tipo,
+                "Nº do documento": numero_doc,
                 "Autoria": autoria,
                 "Texto do documento recebido": texto_recebido,
-                "Texto da resposta institucional enviada": resposta_enviada
-            }])
-            df = pd.concat([df, novo_registro], ignore_index=True)
-            df.to_csv(DATA_FILE, index=False)
+                "Texto da resposta institucional enviada": resposta
+            }
+            df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
+            salvar_banco(df)
             st.success("✅ Registro salvo com sucesso!")
         else:
-            st.warning("⚠️ Por favor, preencha todos os campos obrigatórios.")
+            st.error("⚠️ Preencha todos os campos antes de salvar.")
 
-# ----------------------------------------------------------
-# FUNÇÃO: BUSCAR SEMELHANTES
-# ----------------------------------------------------------
 def buscar_semelhantes():
-    st.markdown("### 🔍 Buscar semelhantes")
     df = carregar_banco()
-
     if df.empty:
-        st.info("Ainda não há registros para comparar.")
+        st.warning("Nenhuma resposta cadastrada ainda.")
         return
 
-    consulta = st.text_area("Cole aqui o texto da demanda ou resposta para buscar semelhantes:")
-    
-    # Adicionando um estado na sessão para armazenar os resultados
-    if 'resultados_busca' not in st.session_state:
-        st.session_state.resultados_busca = pd.DataFrame()
+    consulta = st.text_area("Digite o texto ou pergunta que deseja buscar:")
 
-    if st.button("Buscar"):
-        if consulta.strip():
-            embeddings = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
-            consulta_emb = model.encode(consulta, convert_to_tensor=True)
-            similaridades = util.pytorch_cos_sim(consulta_emb, embeddings)[0]
-            
-            # Garantir que a coluna "Similaridade" seja temporária
-            df_temp = df.copy()
-            df_temp["Similaridade"] = similaridades.cpu().numpy()
-            resultados = df_temp.sort_values(by="Similaridade", ascending=False).head(5).reset_index(drop=True)
-            
-            # 1. Contagem começando em 1: Adiciona a coluna 'ID'
-            resultados.index = resultados.index + 1
-            resultados['ID'] = resultados.index
-            
-            # Salva os resultados no estado da sessão
-            st.session_state.resultados_busca = resultados
-            
-            st.write("### Resultados mais semelhantes:")
-            
-            # Colunas para exibição na tabela
-            colunas_tabela = [
-                "ID",
-                "Nº do processo SEI",
-                "Tipo do documento",
-                "Nº do documento",
-                "Autoria",
-                "Similaridade"
-            ]
-            st.dataframe(st.session_state.resultados_busca[colunas_tabela])
-            
-        else:
-            st.warning("Digite um texto para buscar semelhanças.")
-            st.session_state.resultados_busca = pd.DataFrame() # Limpa os resultados se a busca for vazia
+    if st.button("🔍 Buscar"):
+        if not consulta.strip():
+            st.error("Por favor, digite algo para buscar.")
+            return
 
-    # 2. Seleção do resultado e exibição fora da tabela
-    if not st.session_state.resultados_busca.empty:
-        
-        # Cria as opções para o selectbox, combinando ID e Título/Autoria
-        opcoes_selecao = (st.session_state.resultados_busca["ID"].astype(str) + 
-                          " - " + st.session_state.resultados_busca["Nº do processo SEI"].astype(str) +
-                          " (" + st.session_state.resultados_busca["Autoria"].astype(str) + 
-                          f" - Similaridade: " + (st.session_state.resultados_busca["Similaridade"]*100).round(2).astype(str) + "%)")
-        
-        escolha = st.selectbox(
-            "Selecione um resultado para visualizar o texto completo:", 
-            options=["Selecione..."] + opcoes_selecao.tolist()
-        )
-        
-        if escolha != "Selecione...":
-            # Extrai o ID da escolha (é o primeiro elemento antes do primeiro hífen)
-            selected_id = int(escolha.split(" - ")[0])
-            
-            # Filtra o DataFrame original pelo ID (que agora é o índice + 1)
-            registro_selecionado = st.session_state.resultados_busca[st.session_state.resultados_busca['ID'] == selected_id].iloc[0]
+        embeddings_existentes = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
+        embedding_consulta = model.encode(consulta, convert_to_tensor=True)
+        similaridades = util.cos_sim(embedding_consulta, embeddings_existentes)[0]
 
+        top_indices = np.argsort(similaridades)[-5:][::-1]
+        st.write("### Resultados mais semelhantes:")
+
+        for i in top_indices:
+            st.markdown(f"""
+            **Nº do processo SEI:** {df.iloc[i]['Nº do processo SEI']}  
+            **Tipo:** {df.iloc[i]['Tipo do documento']}  
+            **Nº do documento:** {df.iloc[i]['Nº do documento']}  
+            **Autoria:** {df.iloc[i]['Autoria']}  
+            **Similaridade:** {similaridades[i]:.2f}  
+            **Texto recebido:** {df.iloc[i]['Texto do documento recebido']}  
+            **Resposta enviada:** {df.iloc[i]['Texto da resposta institucional enviada']}
+            """)
             st.markdown("---")
-            st.markdown(f"### 📄 Detalhes do Registro Selecionado (ID: {registro_selecionado['ID']})")
-            
-            # Exibe os metadados principais
-            st.markdown(f"**Nº SEI:** {registro_selecionado['Nº do processo SEI']}")
-            st.markdown(f"**Documento:** {registro_selecionado['Tipo do documento']} - {registro_selecionado['Nº do documento']}")
-            st.markdown(f"**Autoria:** {registro_selecionado['Autoria']}")
-            st.markdown(f"**Similaridade:** {(registro_selecionado['Similaridade'] * 100):.2f}%")
-            
-            # Exibe os textos em caixas de expansão
-            with st.expander("👉 Texto do Documento Recebido (Demanda/Pergunta)"):
-                st.write(registro_selecionado["Texto do documento recebido"])
-            
-            with st.expander("✅ Texto da Resposta Institucional Enviada"):
-                st.write(registro_selecionado["Texto da resposta institucional enviada"])
-            
-            st.markdown("---")
-            
-# ----------------------------------------------------------
-# FUNÇÃO: VISUALIZAR E EDITAR REGISTROS
-# ----------------------------------------------------------
+
 def visualizar_e_editar():
-    st.subheader("📋 Demandas e respostas registradas")
-    if not os.path.exists(DATA_FILE):
+    df = carregar_banco()
+    if df.empty:
         st.warning("Nenhum registro encontrado ainda.")
         return
 
-    df = pd.read_csv(DATA_FILE)
-
-    # 1. Contagem começando em 1:
-    df_exibicao = df.copy()
-    if not df_exibicao.empty:
-        df_exibicao.index = df_exibicao.index + 1
-        df_exibicao = df_exibicao.reset_index().rename(columns={'index': 'ID'})
-        df_exibicao['ID'] = df_exibicao['ID']
-    
-    
     termo_busca = st.text_input("🔍 Buscar por número, texto ou autoria:")
     if termo_busca:
         termo = termo_busca.lower()
-        df_filtrado = df_exibicao[df_exibicao.apply(lambda row: termo in str(row).lower(), axis=1)]
+        df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
     else:
-        df_filtrado = df_exibicao
+        df_filtrado = df
+
+    # ajustar índice para começar em 1
+    df_filtrado = df_filtrado.reset_index(drop=True)
+    df_filtrado.index += 1
 
     st.write(f"**Total de registros:** {len(df_filtrado)}")
     st.dataframe(df_filtrado)
 
-    # Botão para atualizar
     if st.button("🔄 Atualizar lista"):
-        st.rerun()
+        st.experimental_rerun()
 
-    # Se quiser editar um registro
     st.markdown("---")
     st.markdown("### ✏️ Editar registro existente")
 
-    if len(df) > 0:
-        # Usa o índice original (baseado em 0) para edição, mas exibe o ID (baseado em 1)
-        df['ID_Display'] = df.index + 1
-        opcoes = df["ID_Display"].astype(str) + " — " + df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
-        escolha = st.selectbox("Selecione o registro para editar (pelo ID e Nº do processo SEI):", [""] + opcoes.tolist())
+    # montar lista de escolha (mostra Nº SEI — Nº documento)
+    escolhas = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
+    escolha = st.selectbox("Selecione o registro para editar:", [""] + escolhas.tolist())
 
-        if escolha:
-            # Pega o ID_Display da escolha
-            selected_id_display = int(escolha.split(" — ")[0])
-            
-            # Encontra o índice original (baseado em 0) correspondente
-            idx = df[df['ID_Display'] == selected_id_display].index[0]
-            registro = df.loc[idx]
+    if escolha:
+        idx = escolhas[escolhas == escolha].index[0]
+        registro = df.loc[idx]
 
-            st.write(f"**Editando Registro ID:** {registro['ID_Display']}")
-            
-            n_processo = st.text_input("Nº do processo SEI", registro["Nº do processo SEI"])
-            tipo_doc = st.text_input("Tipo do documento", registro["Tipo do documento"])
-            n_documento = st.text_input("Nº do documento", registro["Nº do documento"])
-            autoria = st.text_input("Autoria", registro["Autoria"])
-            texto_recebido = st.text_area("Texto do documento recebido", registro["Texto do documento recebido"])
-            resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro["Texto da resposta institucional enviada"])
+        n_processo = st.text_input("Nº do processo SEI", registro["Nº do processo SEI"])
+        tipo_doc = st.text_input("Tipo do documento", registro["Tipo do documento"])
+        n_documento = st.text_input("Nº do documento", registro["Nº do documento"])
+        autoria = st.text_input("Autoria", registro["Autoria"])
+        texto_recebido = st.text_area("Texto do documento recebido", registro["Texto do documento recebido"])
+        resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro["Texto da resposta institucional enviada"])
 
-            if st.button("💾 Atualizar registro"):
-                # Garante que a coluna 'ID_Display' não seja salva
-                df.loc[idx, ["Nº do processo SEI", "Tipo do documento", "Nº do documento", "Autoria", "Texto do documento recebido", "Texto da resposta institucional enviada"]] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
-                df.drop(columns=['ID_Display'], inplace=True, errors='ignore') 
-                df.to_csv(DATA_FILE, index=False)
-                st.success("✅ Registro atualizado com sucesso!")
-                st.rerun()
+        if st.button("💾 Atualizar registro"):
+            df.loc[idx] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
+            salvar_banco(df)
+            st.success("✅ Registro atualizado com sucesso!")
+            st.experimental_rerun()
 
-# ----------------------------------------------------------
-# LOGIN FIXO
-# ----------------------------------------------------------
+# ---------------- Login fixo simples ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     st.markdown("### 🔐 Acesso restrito à equipe DPL/ICMBio")
-
     usuario = st.text_input("Usuário:")
     senha = st.text_input("Senha:", type="password")
-
     if st.button("Entrar"):
         if usuario == "DPL" and senha == "ICMBio2025!":
             st.session_state.logged_in = True
-            st.success("Arrasou! Login realizado com sucesso! ✅")
-            st.rerun()
+            st.success("Login realizado com sucesso! ✅")
+            st.experimental_rerun()
         else:
             st.error("❌ Usuário ou senha incorretos.")
 else:
-    # ===== MENU LATERAL =====
     menu = st.sidebar.radio("Menu", [
         "Adicionar nova demanda e resposta",
-        "Buscar semelhantes",
+        "Buscar demandas semelhantes",
         "Visualizar demandas e respostas registradas",
         "Sair"
     ])
-    
-    # Inicializa o estado para resultados de busca se não existir (para evitar erro no st.selectbox)
-    if 'resultados_busca' not in st.session_state:
-        st.session_state.resultados_busca = pd.DataFrame()
-
 
     if menu == "Adicionar nova demanda e resposta":
         adicionar_nova_entrada()
-
-    elif menu == "Buscar semelhantes":
+    elif menu == "Buscar demandas semelhantes":
         buscar_semelhantes()
-
     elif menu == "Visualizar demandas e respostas registradas":
         visualizar_e_editar()
-
     elif menu == "Sair":
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
-        st.rerun()
-
+        st.experimental_rerun()
