@@ -34,10 +34,6 @@ st.title("Banco de Respostas da DPL")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
 # ---------------- Config do Google Sheets via Secrets ----------------
-# Você deve ter adicionado em Streamlit Secrets:
-# gcp_service_account = '''{ ... JSON da service account ... }'''
-# sheet_url = "https://docs.google.com/spreadsheets/d/SEU_ID_AQUI/edit#gid=0"
-
 if "gcp_service_account" not in st.secrets:
     st.error("Erro: credencial gcp_service_account não encontrada nos Secrets. Configure conforme instruções.")
     st.stop()
@@ -45,8 +41,12 @@ if "sheet_url" not in st.secrets:
     st.error("Erro: sheet_url não encontrada nos Secrets.")
     st.stop()
 
-# Carregar credenciais da secret (JSON)
-service_account_info = json.loads(st.secrets["gcp_service_account"])
+# --------------- CORREÇÃO AQUI ---------------
+# Antes: json.loads(st.secrets["gcp_service_account"])
+# Agora: st.secrets["gcp_service_account"] (já é dict)
+service_account_info = st.secrets["gcp_service_account"]
+# ---------------------------------------------
+
 # Autenticar gspread
 gc = gspread.service_account_from_dict(service_account_info)
 # Abrir planilha por URL
@@ -71,13 +71,11 @@ COLS = [
 ]
 
 def carregar_banco():
-    # Lê todas as linhas da planilha e transforma em DataFrame
     try:
         records = ws.get_all_records()
         if len(records) == 0:
             return pd.DataFrame(columns=COLS)
         df = pd.DataFrame.from_records(records)
-        # Garantir colunas certas (se faltar, adicionar)
         for c in COLS:
             if c not in df.columns:
                 df[c] = ""
@@ -88,16 +86,13 @@ def carregar_banco():
         return pd.DataFrame(columns=COLS)
 
 def salvar_banco(df):
-    # Escreve o dataframe inteiro na planilha (substitui o conteúdo)
     try:
-        # Se a planilha está vazia ou com cabeçalho, primeiro limpar
         ws.clear()
-        # Escreve o dataframe com cabeçalho
         set_with_dataframe(ws, df, include_index=False, include_column_header=True)
     except Exception as e:
         st.error(f"Erro ao salvar na planilha: {e}")
 
-# ---------------- Funções do app (adição, busca, visualização/edição) ----------------
+# ---------------- Funções do app ----------------
 def adicionar_nova_entrada():
     df = carregar_banco()
 
@@ -171,7 +166,6 @@ def visualizar_e_editar():
     else:
         df_filtrado = df
 
-    # ajustar índice para começar em 1
     df_filtrado = df_filtrado.reset_index(drop=True)
     df_filtrado.index += 1
 
@@ -184,7 +178,6 @@ def visualizar_e_editar():
     st.markdown("---")
     st.markdown("### ✏️ Editar registro existente")
 
-    # montar lista de escolha (mostra Nº SEI — Nº documento)
     escolhas = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
     escolha = st.selectbox("Selecione o registro para editar:", [""] + escolhas.tolist())
 
@@ -238,4 +231,3 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.experimental_rerun()
-
