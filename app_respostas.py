@@ -8,6 +8,10 @@ from gspread_dataframe import set_with_dataframe
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
+# --- LINHAS DE TESTE: mostrar chaves carregadas de st.secrets ---
+st.write("SECRETS CARREGADOS:", list(st.secrets.keys()))
+# --------------------------------------------------------------
+
 # ---------------- Config visual (mantém seu tema) ----------------
 st.set_page_config(page_title="Banco de Respostas da DPL", page_icon="🌿", layout="wide")
 
@@ -234,3 +238,4 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.experimental_rerun()
+
