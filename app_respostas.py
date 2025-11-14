@@ -10,6 +10,7 @@ import numpy as np
 
 # --- LINHAS DE TESTE: mostrar chaves carregadas de st.secrets ---
 st.write("SECRETS CARREGADOS:", list(st.secrets.keys()))
+st.write("URL:", st.secrets["sheet_url"])
 st.write("DEBUG URL LIDA PELO APP:")
 st.write(repr(st.secrets["sheet_url"]))
 
@@ -234,4 +235,5 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.experimental_rerun()
+
 
