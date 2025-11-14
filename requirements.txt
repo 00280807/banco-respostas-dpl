@@ -2,3 +2,6 @@ streamlit
 sentence-transformers
 pandas
 numpy
+gspread
+gspread-dataframe
+google-auth
