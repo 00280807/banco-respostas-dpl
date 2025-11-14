@@ -29,26 +29,37 @@ st.image(
 st.title("Banco de Respostas da DPL")
 st.caption("🌿 Harmonizando manifestações institucionais com inovação e gestão do conhecimento")
 
-# ---------------- Config do Google Sheets via Secrets ----------------
-if "gcp_service_account" not in st.secrets:
-    st.error("Erro: credencial gcp_service_account não encontrada nos Secrets. Configure conforme instruções.")
-    st.stop()
-if "sheet_url" not in st.secrets:
-    st.error("Erro: sheet_url não encontrada nos Secrets.")
+# -----------------------------------------------------------------
+# 🔥 CORREÇÃO FUNDAMENTAL: leitura robusta dos SECRETS
+# -----------------------------------------------------------------
+
+secrets = st.secrets.to_dict()
+
+# Mostrar o que foi carregado (para debug seguro)
+st.write("🔍 Secrets carregados:", list(secrets.keys()))
+
+if "gcp_service_account" not in secrets:
+    st.error("❌ Erro: a chave [gcp_service_account] não está no secrets.toml")
     st.stop()
 
-# --------------- CORREÇÃO AQUI ---------------
-# Antes: json.loads(st.secrets["gcp_service_account"])
-# Agora: st.secrets["gcp_service_account"] (já é dict)
-service_account_info = st.secrets["gcp_service_account"]
-# ---------------------------------------------
+if "sheet_url" not in secrets:
+    st.error("❌ Erro: sheet_url não está definida no secrets.toml")
+    st.stop()
 
+# Agora está 100% seguro acessar:
+service_account_info = secrets["gcp_service_account"]
+sheet_url = secrets["sheet_url"]
+
+# -----------------------------------------------------------------
 # Autenticar gspread
-gc = gspread.service_account_from_dict(service_account_info)
-# Abrir planilha por URL
-SHEET = gc.open_by_url(st.secrets["sheet_url"])
-# Usaremos a primeira worksheet
-ws = SHEET.sheet1
+# -----------------------------------------------------------------
+try:
+    gc = gspread.service_account_from_dict(service_account_info)
+    SHEET = gc.open_by_url(sheet_url)
+    ws = SHEET.sheet1
+except Exception as e:
+    st.error(f"❌ Erro ao conectar ao Google Sheets: {e}")
+    st.stop()
 
 # ---------------- Modelo semântico ----------------
 @st.cache_resource
@@ -227,6 +238,3 @@ else:
         st.session_state.logged_in = False
         st.success("Logout realizado com sucesso.")
         st.experimental_rerun()
-
-
-
