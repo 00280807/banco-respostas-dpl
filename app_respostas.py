@@ -35,9 +35,7 @@ st.caption("🌿 Harmonizando manifestações institucionais com inovação e ge
 
 secrets = st.secrets.to_dict()
 
-# Mostrar o que foi carregado (para debug seguro)
-st.write("🔍 Secrets carregados:", list(secrets.keys()))
-
+# Verifica as chaves essenciais
 if "gcp_service_account" not in secrets:
     st.error("❌ Erro: a chave [gcp_service_account] não está no secrets.toml")
     st.stop()
@@ -46,9 +44,14 @@ if "sheet_url" not in secrets:
     st.error("❌ Erro: sheet_url não está definida no secrets.toml")
     st.stop()
 
-# Agora está 100% seguro acessar:
+# Pega credenciais de login e Sheets
 service_account_info = secrets["gcp_service_account"]
 sheet_url = secrets["sheet_url"]
+
+# Pega credenciais de login, com um fallback seguro se faltar no secrets
+LOGIN_USER = st.secrets.get("LOGIN_USER", "DPL_DEFAULT")
+LOGIN_PASS = st.secrets.get("LOGIN_PASS", "DEFAULT_PASS")
+
 
 # -----------------------------------------------------------------
 # Autenticar gspread
@@ -58,12 +61,13 @@ try:
     SHEET = gc.open_by_url(sheet_url)
     ws = SHEET.sheet1
 except Exception as e:
-    st.error(f"❌ Erro ao conectar ao Google Sheets: {e}")
+    st.error(f"❌ Erro ao conectar ao Google Sheets. Verifique a URL e as permissões de compartilhamento. Detalhes: {e}")
     st.stop()
 
 # ---------------- Modelo semântico ----------------
 @st.cache_resource
 def load_model():
+    # Modelo otimizado para português e tarefas de similaridade
     return SentenceTransformer("paraphrase-MiniLM-L6-v2")
 model = load_model()
 
@@ -77,43 +81,62 @@ COLS = [
     "Texto da resposta institucional enviada"
 ]
 
+@st.cache_data(ttl=600) # Cache de 10 minutos para o banco
 def carregar_banco():
     try:
-        records = ws.get_all_records()
-        if len(records) == 0:
+        # Tenta pegar todos os registros como lista de dicionários
+        records = ws.get_all_records() 
+        if not records:
+            # Se a planilha estiver vazia, retorna um DF vazio com as colunas definidas.
             return pd.DataFrame(columns=COLS)
-        df = pd.DataFrame.from_records(records)
+        
+        # Cria o DataFrame, forçando todas as colunas a serem strings para consistência.
+        df = pd.DataFrame.from_records(records, dtype=str)
+        
+        # Garante que as colunas existam e estejam na ordem correta
         for c in COLS:
             if c not in df.columns:
                 df[c] = ""
+        
         df = df[COLS]
+        # Adiciona um ID de linha para facilitar a busca interna, se necessário
+        df['ID_Linha'] = df.index
         return df
     except Exception as e:
-        st.error(f"Erro ao carregar planilha: {e}")
+        st.error(f"Erro ao carregar planilha: {e}. Verifique as permissões e o nome da planilha.")
         return pd.DataFrame(columns=COLS)
 
 def salvar_banco(df):
     try:
+        # Remove a coluna ID_Linha antes de salvar de volta no Sheets, se existir
+        df_to_save = df.drop(columns=['ID_Linha'], errors='ignore')
+        
         ws.clear()
-        set_with_dataframe(ws, df, include_index=False, include_column_header=True)
+        set_with_dataframe(ws, df_to_save, include_index=False, include_column_header=True)
+        # Limpa o cache após salvar para forçar uma nova leitura na próxima vez
+        carregar_banco.clear() 
+        st.experimental_rerun()
     except Exception as e:
         st.error(f"Erro ao salvar na planilha: {e}")
 
 # ---------------- Funções do app ----------------
 def adicionar_nova_entrada():
-    df = carregar_banco()
-
     st.markdown("### 📝 Adicionar nova demanda e resposta")
 
-    sei = st.text_input("Nº do processo SEI")
-    tipo = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
-    numero_doc = st.text_input("Nº do documento")
-    autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
-    texto_recebido = st.text_area("Texto do documento recebido (demanda ou perguntas)")
-    resposta = st.text_area("Texto da resposta institucional enviada")
+    # Usando st.form para submissão mais limpa e para garantir que o cache só seja atualizado depois
+    with st.form("form_nova_entrada"):
+        sei = st.text_input("Nº do processo SEI")
+        tipo = st.selectbox("Tipo do documento", ["Ofício", "Requerimento de Informação", "Indicação", "Outro"])
+        numero_doc = st.text_input("Nº do documento")
+        autoria = st.text_input("Autoria (ex: Dep. Federal João Silva - PT/SP)")
+        texto_recebido = st.text_area("Texto do documento recebido (demanda ou perguntas)")
+        resposta = st.text_area("Texto da resposta institucional enviada")
 
-    if st.button("💾 Salvar registro"):
+        salvar_button = st.form_submit_button("💾 Salvar registro")
+    
+    if salvar_button:
         if sei and tipo and numero_doc and autoria and texto_recebido and resposta:
+            df = carregar_banco()
             nova_linha = {
                 "Nº do processo SEI": sei,
                 "Tipo do documento": tipo,
@@ -122,90 +145,124 @@ def adicionar_nova_entrada():
                 "Texto do documento recebido": texto_recebido,
                 "Texto da resposta institucional enviada": resposta
             }
-            df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
+            # Concatena a nova linha. A coluna ID_Linha será ignorada no Sheets
+            df = pd.concat([df.drop(columns=['ID_Linha'], errors='ignore'), pd.DataFrame([nova_linha])], ignore_index=True)
             salvar_banco(df)
-            st.success("✅ Registro salvo com sucesso!")
+            st.success("✅ Registro salvo com sucesso! Atualizando lista...")
         else:
             st.error("⚠️ Preencha todos os campos antes de salvar.")
 
 def buscar_semelhantes():
     df = carregar_banco()
-    if df.empty:
-        st.warning("Nenhuma resposta cadastrada ainda.")
+    if df.empty or len(df) == 0:
+        st.warning("Nenhuma resposta cadastrada ainda. Por favor, adicione registros primeiro.")
         return
 
+    st.markdown("### 🔍 Buscar demandas semelhantes (IA Semântica)")
     consulta = st.text_area("Digite o texto ou pergunta que deseja buscar:")
 
     if st.button("🔍 Buscar"):
         if not consulta.strip():
             st.error("Por favor, digite algo para buscar.")
             return
+        
+        # Filtra registros com texto recebido vazio, se houver
+        df_para_analise = df[df["Texto do documento recebido"].astype(str).str.strip() != ""]
+        if df_para_analise.empty:
+            st.warning("Nenhum registro com 'Texto do documento recebido' válido para análise.")
+            return
 
-        embeddings_existentes = model.encode(df["Texto do documento recebido"].tolist(), convert_to_tensor=True)
-        embedding_consulta = model.encode(consulta, convert_to_tensor=True)
-        similaridades = util.cos_sim(embedding_consulta, embeddings_existentes)[0]
+        with st.spinner("Analisando similaridades..."):
+            embeddings_existentes = model.encode(df_para_analise["Texto do documento recebido"].tolist(), convert_to_tensor=True)
+            embedding_consulta = model.encode(consulta, convert_to_tensor=True)
+            similaridades = util.cos_sim(embedding_consulta, embeddings_existentes)[0]
 
         top_indices = np.argsort(similaridades)[-5:][::-1]
         st.write("### Resultados mais semelhantes:")
 
         for i in top_indices:
+            # Usa o índice do DataFrame filtrado para acessar os dados
+            registro = df_para_analise.iloc[i]
             st.markdown(f"""
-            **Nº do processo SEI:** {df.iloc[i]['Nº do processo SEI']}  
-            **Tipo:** {df.iloc[i]['Tipo do documento']}  
-            **Nº do documento:** {df.iloc[i]['Nº do documento']}  
-            **Autoria:** {df.iloc[i]['Autoria']}  
-            **Similaridade:** {similaridades[i]:.2f}  
-            **Texto recebido:** {df.iloc[i]['Texto do documento recebido']}  
-            **Resposta enviada:** {df.iloc[i]['Texto da resposta institucional enviada']}
-            """)
-            st.markdown("---")
+            <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 5px;">
+            **Similaridade:** **{similaridades[i]:.2f}**
+            **Nº do processo SEI:** {registro['Nº do processo SEI']} | **Tipo:** {registro['Tipo do documento']} | **Nº do documento:** {registro['Nº do documento']}  
+            **Autoria:** {registro['Autoria']}  
+            **Demanda Recebida:** *{registro['Texto do documento recebido']}* **Resposta Institucional Enviada:** {registro['Texto da resposta institucional enviada']}
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("---")
 
 def visualizar_e_editar():
     df = carregar_banco()
-    if df.empty:
-        st.warning("Nenhum registro encontrado ainda.")
+    if df.empty or len(df) == 0:
+        st.warning("Nenhum registro encontrado ainda. Por favor, adicione registros primeiro.")
         return
 
-    termo_busca = st.text_input("🔍 Buscar por número, texto ou autoria:")
+    st.markdown("### 🔍 Visualizar e Editar registros")
+    
+    # ------------------ Busca e Visualização ------------------
+    termo_busca = st.text_input("🔍 Buscar por número, texto ou autoria:", key="busca_view_edit")
     if termo_busca:
         termo = termo_busca.lower()
+        # Aplica a busca em todas as colunas
         df_filtrado = df[df.apply(lambda row: termo in str(row).lower(), axis=1)]
     else:
         df_filtrado = df
 
-    df_filtrado = df_filtrado.reset_index(drop=True)
-    df_filtrado.index += 1
-
-    st.write(f"**Total de registros:** {len(df_filtrado)}")
-    st.dataframe(df_filtrado)
-
-    if st.button("🔄 Atualizar lista"):
-        st.experimental_rerun()
-
+    # Exibe o DF filtrado (com índice de visualização limpo, mas não o índice interno do Pandas)
+    df_para_exibir = df_filtrado.drop(columns=['ID_Linha'], errors='ignore').copy()
+    df_para_exibir.index = np.arange(1, len(df_para_exibir) + 1)
+    st.write(f"**Total de registros filtrados:** {len(df_para_exibir)}")
+    st.dataframe(df_para_exibir)
+    
     st.markdown("---")
+    
+    # ------------------ Edição de Registro (CORRIGIDO) ------------------
     st.markdown("### ✏️ Editar registro existente")
 
+    # Cria a string de escolha (SEI + Nº Doc) para o selectbox
     escolhas = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
-    escolha = st.selectbox("Selecione o registro para editar:", [""] + escolhas.tolist())
+    
+    # Adiciona a string de escolha temporariamente ao DataFrame original para facilitar a busca
+    df['Escolha'] = escolhas
+    
+    escolha_selecionada = st.selectbox("Selecione o registro para editar:", [""] + escolhas.tolist(), key="select_edit")
 
-    if escolha:
-        idx = escolhas[escolhas == escolha].index[0]
-        registro = df.loc[idx]
+    if escolha_selecionada:
+        # Encontra o registro selecionado no DataFrame original (df)
+        # .iloc[0] pega a primeira (e única) linha do filtro
+        registro_a_editar = df[df['Escolha'] == escolha_selecionada].iloc[0]
+        # O índice real da linha no DF do pandas (necessário para o df.loc)
+        idx_real = registro_a_editar.name 
+        
+        st.markdown(f"**Registro selecionado:** `{escolha_selecionada}`")
 
-        n_processo = st.text_input("Nº do processo SEI", registro["Nº do processo SEI"])
-        tipo_doc = st.text_input("Tipo do documento", registro["Tipo do documento"])
-        n_documento = st.text_input("Nº do documento", registro["Nº do documento"])
-        autoria = st.text_input("Autoria", registro["Autoria"])
-        texto_recebido = st.text_area("Texto do documento recebido", registro["Texto do documento recebido"])
-        resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro["Texto da resposta institucional enviada"])
+        with st.form("form_edicao"):
+            # Usando os dados do registro_a_editar para os valores iniciais
+            n_processo = st.text_input("Nº do processo SEI", registro_a_editar["Nº do processo SEI"])
+            tipo_doc = st.text_input("Tipo do documento", registro_a_editar["Tipo do documento"])
+            n_documento = st.text_input("Nº do documento", registro_a_editar["Nº do documento"])
+            autoria = st.text_input("Autoria", registro_a_editar["Autoria"])
+            texto_recebido = st.text_area("Texto do documento recebido", registro_a_editar["Texto do documento recebido"])
+            resposta_enviada = st.text_area("Texto da resposta institucional enviada", registro_a_editar["Texto da resposta institucional enviada"])
 
-        if st.button("💾 Atualizar registro"):
-            df.loc[idx] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
-            salvar_banco(df)
-            st.success("✅ Registro atualizado com sucesso!")
-            st.experimental_rerun()
+            if st.form_submit_button("💾 Atualizar registro"):
+                # Atualiza a linha no DataFrame original usando o índice real (idx_real)
+                df.loc[idx_real, COLS] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
+                
+                # Salva o banco (a função salvar_banco já remove a coluna ID_Linha e atualiza o cache)
+                salvar_banco(df)
+                st.success("✅ Registro atualizado com sucesso! Atualizando lista...")
+                
+    # Opcional: botão para recarregar manualmente
+    if st.button("🔄 Recarregar dados da planilha"):
+        carregar_banco.clear()
+        st.experimental_rerun()
 
-# ---------------- Login fixo simples ----------------
+
+# ---------------- Login (MELHORADO) ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -213,17 +270,21 @@ if not st.session_state.logged_in:
     st.markdown("### 🔐 Acesso restrito à equipe DPL/ICMBio")
     usuario = st.text_input("Usuário:")
     senha = st.text_input("Senha:", type="password")
+    
     if st.button("Entrar"):
-        if usuario == "DPL" and senha == "ICMBio2025!":
+        # Compara com as chaves do secrets.toml
+        if usuario == LOGIN_USER and senha == LOGIN_PASS:
             st.session_state.logged_in = True
             st.success("Login realizado com sucesso! ✅")
             st.experimental_rerun()
         else:
             st.error("❌ Usuário ou senha incorretos.")
 else:
+    # ---------------- Menu Principal ----------------
+    st.sidebar.markdown(f"**Usuário:** `{LOGIN_USER}`")
     menu = st.sidebar.radio("Menu", [
+        "Buscar demandas semelhantes", # Coloquei a busca como primeira opção
         "Adicionar nova demanda e resposta",
-        "Buscar demandas semelhantes",
         "Visualizar demandas e respostas registradas",
         "Sair"
     ])
@@ -236,5 +297,5 @@ else:
         visualizar_e_editar()
     elif menu == "Sair":
         st.session_state.logged_in = False
-        st.success("Logout realizado com sucesso.")
+        st.sidebar.success("Logout realizado com sucesso.")
         st.experimental_rerun()
