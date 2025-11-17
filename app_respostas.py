@@ -8,7 +8,7 @@ from gspread_dataframe import set_with_dataframe
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
-# ---------------- Config visual (mantém seu tema) ----------------
+# ---------------- Config visual ----------------
 st.set_page_config(page_title="Banco de Respostas da DPL", page_icon="🌿", layout="wide")
 
 st.markdown("""
@@ -54,7 +54,7 @@ LOGIN_PASS = st.secrets.get("LOGIN_PASS", "DEFAULT_PASS")
 # -----------------------------------------------------------------
 try:
     # 🌟 CORREÇÃO CRÍTICA: Substitui as quebras de linha literais pelo caractere real \n.
-    # Isso resolve o erro "Read 105 bytes instead of expected 29" ao ler a chave privada.
+    # Isso é necessário para que a chave privada seja lida corretamente pelo gspread.
     service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
     
     gc = gspread.service_account_from_dict(service_account_info)
@@ -94,7 +94,6 @@ def carregar_banco():
                 df[c] = ""
         
         df = df[COLS]
-        # Adiciona um ID de linha para facilitar a busca interna
         df['ID_Linha'] = df.index
         return df
     except Exception as e:
@@ -103,12 +102,10 @@ def carregar_banco():
 
 def salvar_banco(df):
     try:
-        # Remove a coluna ID_Linha antes de salvar de volta no Sheets, se existir
         df_to_save = df.drop(columns=['ID_Linha'], errors='ignore')
         
         ws.clear()
         set_with_dataframe(ws, df_to_save, include_index=False, include_column_header=True)
-        # Limpa o cache após salvar para forçar uma nova leitura na próxima vez
         carregar_banco.clear() 
         st.experimental_rerun()
     except Exception as e:
@@ -139,7 +136,6 @@ def adicionar_nova_entrada():
                 "Texto do documento recebido": texto_recebido,
                 "Texto da resposta institucional enviada": resposta
             }
-            # Concatena a nova linha
             df_sem_id = df.drop(columns=['ID_Linha'], errors='ignore')
             df = pd.concat([df_sem_id, pd.DataFrame([nova_linha])], ignore_index=True)
             salvar_banco(df)
@@ -215,7 +211,7 @@ def visualizar_e_editar():
 
     escolhas = df["Nº do processo SEI"].astype(str) + " — " + df["Nº do documento"].astype(str)
     
-    df['Escolha'] = escolhas # Adiciona a coluna temporária para facilitar a busca
+    df['Escolha'] = escolhas
     
     escolha_selecionada = st.selectbox("Selecione o registro para editar:", [""] + escolhas.tolist(), key="select_edit")
 
@@ -236,7 +232,6 @@ def visualizar_e_editar():
             if st.form_submit_button("💾 Atualizar registro"):
                 df.loc[idx_real, COLS] = [n_processo, tipo_doc, n_documento, autoria, texto_recebido, resposta_enviada]
                 
-                # A função salvar_banco cuida do drop da coluna 'ID_Linha' e 'Escolha' (implicitamente)
                 salvar_banco(df)
                 st.success("✅ Registro atualizado com sucesso! Atualizando lista...")
                 
